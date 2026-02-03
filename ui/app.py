@@ -109,11 +109,18 @@ class App(ctk.CTk):
         names = [j.name for j in joysticks]
         self._settings_frame.update_joysticks(names)
 
+        if not names:
+            return
+
         # Re-sélectionner le joystick sauvegardé si disponible
         saved_name = self._config_manager.config.joystick_name
         if saved_name and saved_name in names:
             self._settings_frame.set_joystick(saved_name)
             self._joystick_manager.select_joystick_by_name(saved_name)
+        else:
+            # Sélectionner le premier joystick par défaut
+            self._joystick_manager.select_joystick_by_name(names[0])
+            self._config_manager.config.joystick_name = names[0]
 
     def _load_saved_config(self) -> None:
         """Charge la configuration sauvegardée."""
@@ -183,7 +190,12 @@ class App(ctk.CTk):
             self.after(0, lambda: selector.stop_listening(button_id))
 
     def _on_ptt_press(self, joystick_id: int, button_id: int) -> None:
-        """Appelé quand le bouton PTT est pressé."""
+        """Appelé quand le bouton PTT est pressé (depuis thread pygame)."""
+        # Exécuter sur le thread principal Tkinter
+        self.after(0, self._do_ptt_press)
+
+    def _do_ptt_press(self) -> None:
+        """Démarre l'enregistrement (thread principal)."""
         if self._is_recording or self._current_state != "idle":
             return
 
@@ -197,7 +209,12 @@ class App(ctk.CTk):
         self._update_volume()
 
     def _on_ptt_release(self, joystick_id: int, button_id: int) -> None:
-        """Appelé quand le bouton PTT est relâché."""
+        """Appelé quand le bouton PTT est relâché (depuis thread pygame)."""
+        # Exécuter sur le thread principal Tkinter
+        self.after(0, self._do_ptt_release)
+
+    def _do_ptt_release(self) -> None:
+        """Arrête l'enregistrement et lance la transcription (thread principal)."""
         if not self._is_recording:
             return
 

@@ -1,9 +1,9 @@
 {
-  "joystick_name": "",
-  "button_id": -1,
+  "joystick_name": "TWCS Throttle",
+  "button_id": 9,
   "mode": "cpu",
   "model": "small",
   "injection_delay_ms": 50,
-  "window_geometry": "400x820+386+119",
+  "window_geometry": "400x820+1430+171",
   "audio_device": null
 }
