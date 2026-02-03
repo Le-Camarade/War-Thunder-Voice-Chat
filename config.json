@@ -1,10 +1,10 @@
 {
   "joystick_name": "TWCS Throttle",
   "button_id": 9,
-  "mode": "cpu",
   "model": "medium",
   "injection_delay_ms": 100,
   "chat_key": "enter",
-  "window_geometry": "400x820+100+100",
-  "audio_device": null
+  "window_geometry": "400x820+1075+144",
+  "audio_device": null,
+  "auto_start": false
 }

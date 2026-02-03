@@ -7,8 +7,10 @@ A standalone Windows application for sending voice messages in War Thunder chat 
 - **Push-to-Talk with Joystick**: Use any joystick button to trigger voice recording
 - **Local Speech-to-Text**: Powered by OpenAI Whisper - no internet required
 - **Automatic Chat Injection**: Messages are typed directly into War Thunder chat
-- **CPU/GPU Modes**: Optimized for gaming - CPU mode preserves GPU for VR/gaming
 - **Dark Theme UI**: Modern interface that matches gaming setups
+- **System Tray**: Minimize to system tray to keep the app running in the background
+- **Auto-Start**: Option to launch automatically with Windows
+- **Configurable Chat Key**: Support for different in-game chat keybindings (Enter, T, Y, U)
 
 ## Requirements
 
@@ -18,6 +20,8 @@ A standalone Windows application for sending voice messages in War Thunder chat 
 - A microphone
 
 ## Installation
+
+### From Source
 
 ```bash
 # Clone or download the project
@@ -31,15 +35,13 @@ venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### Optional: GPU Support (CUDA)
+### Standalone Executable
 
-For faster transcription with NVIDIA GPUs:
-
-```bash
-pip install torch --index-url https://download.pytorch.org/whl/cu121
-```
+Download `WT-VoiceChat.exe` from the releases page (no Python required).
 
 ## Usage
+
+### From Source
 
 ```bash
 # Activate environment
@@ -49,13 +51,17 @@ venv\Scripts\activate
 python main.py
 ```
 
+### From Executable
+
+Simply run `WT-VoiceChat.exe`.
+
 ### First Launch
 
 1. Connect your joystick before launching
 2. Select your joystick from the dropdown
-3. Click "Assigner" and press the button you want to use for push-to-talk
-4. Select Performance (CPU) or Quality (GPU) mode
-5. Choose your Whisper model (small recommended)
+3. Click "Assign" and press the button you want to use for push-to-talk
+4. Choose your Whisper model (small recommended)
+5. Set the chat key to match your in-game keybinding (default: Enter)
 
 ### Using Voice Chat
 
@@ -64,21 +70,44 @@ python main.py
 3. Release the button
 4. The message will be transcribed and sent to War Thunder chat
 
+### System Tray
+
+Click "Minimize to Tray" to hide the application to the system tray. The app continues running in the background.
+
+- **Double-click** the tray icon to restore the window
+- **Right-click** for options: Restore or Quit
+
 ## Configuration
 
 Settings are automatically saved to `config.json`:
 
 - Joystick and button assignment
-- CPU/GPU mode
-- Whisper model size
+- Whisper model size (tiny, small, medium)
+- Chat key (Enter, T, Y, U)
+- Auto-start with Windows
 - Window position
 
-## Modes
+## Whisper Models
 
-| Mode | Device | Model | Use Case |
-|------|--------|-------|----------|
-| Performance | CPU | small | VR gaming, GPU-intensive games |
-| Quality | GPU | medium | Better accuracy when GPU is free |
+| Model | Speed | Accuracy | Use Case |
+|-------|-------|----------|----------|
+| tiny | Fastest | Basic | Quick responses, simple phrases |
+| small | Balanced | Good | Recommended for most users |
+| medium | Slower | Best | Maximum accuracy |
+
+## Building the Executable
+
+To create a standalone `.exe` file:
+
+```bash
+# Install PyInstaller
+pip install pyinstaller
+
+# Build
+pyinstaller build.spec --noconfirm
+```
+
+Or simply run `build.bat`. The executable will be created in the `dist/` folder.
 
 ## Project Structure
 
@@ -87,11 +116,14 @@ war-thunder-voice-chat/
 ├── main.py              # Entry point
 ├── config.py            # Configuration manager
 ├── requirements.txt     # Dependencies
+├── build.spec           # PyInstaller configuration
+├── build.bat            # Build script
 ├── core/
 │   ├── recorder.py      # Audio capture
 │   ├── transcriber.py   # Whisper integration
-│   ├── injector.py      # Keyboard simulation
-│   └── joystick.py      # Joystick handling
+│   ├── injector.py      # Keyboard simulation (SendInput)
+│   ├── joystick.py      # Joystick handling
+│   └── autostart.py     # Windows auto-start registry
 └── ui/
     ├── app.py           # Main window
     ├── widgets.py       # Custom widgets
@@ -102,9 +134,13 @@ war-thunder-voice-chat/
 
 **No joystick detected**: Connect your joystick and click the refresh button
 
-**Antivirus blocking**: Add an exception for the application (pynput uses keyboard simulation)
+**Antivirus blocking**: Add an exception for the application (uses keyboard simulation via SendInput)
 
-**Transcription slow on CPU**: Use "tiny" model for faster results, or switch to GPU mode
+**Transcription slow**: Use "tiny" model for faster results
+
+**Chat not working in War Thunder**: Make sure the chat key setting matches your in-game keybinding
+
+**System tray icon not showing**: Install `pystray` and `Pillow` packages
 
 ## License
 

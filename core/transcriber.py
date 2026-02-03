@@ -11,6 +11,14 @@ import whisper
 import torch
 
 
+def is_cuda_available() -> bool:
+    """Vérifie si CUDA est disponible."""
+    try:
+        return torch.cuda.is_available()
+    except Exception:
+        return False
+
+
 class WhisperTranscriber:
     """Transcripteur vocal utilisant OpenAI Whisper."""
 
@@ -29,10 +37,19 @@ class WhisperTranscriber:
             compute_type: Ignoré (compatibilité avec l'ancienne API)
         """
         self.model_size = model_size
-        self.device = device
         self.compute_type = compute_type  # Gardé pour compatibilité
-
         self._model = None
+        self._cuda_warning_shown = False
+
+        # Vérifier si CUDA est demandé mais non disponible
+        if device == "cuda" and not is_cuda_available():
+            print("ATTENTION: CUDA demandé mais non disponible. Utilisation du CPU.")
+            print("Pour activer le GPU, installez PyTorch avec CUDA:")
+            print("  pip install torch --index-url https://download.pytorch.org/whl/cu121")
+            self.device = "cpu"
+            self._cuda_warning_shown = True
+        else:
+            self.device = device
 
     def _ensure_model_loaded(self) -> None:
         """Charge le modèle si pas encore fait (lazy loading)."""
@@ -95,6 +112,13 @@ class WhisperTranscriber:
         if model_size is not None:
             self.model_size = model_size
         if device is not None:
-            self.device = device
+            # Vérifier si CUDA est demandé mais non disponible
+            if device == "cuda" and not is_cuda_available():
+                if not self._cuda_warning_shown:
+                    print("ATTENTION: CUDA demandé mais non disponible. Utilisation du CPU.")
+                    self._cuda_warning_shown = True
+                self.device = "cpu"
+            else:
+                self.device = device
 
         self.unload_model()

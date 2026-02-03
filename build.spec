@@ -12,6 +12,12 @@ block_cipher = None
 # Collect whisper model data
 whisper_datas = collect_data_files('whisper')
 
+# App resources (logo, icon)
+app_datas = [
+    ('wt_radio_logo_minimalism.png', '.'),
+    ('icon.ico', '.'),
+]
+
 # Hidden imports for all dependencies
 hidden_imports = [
     'customtkinter',
@@ -34,7 +40,7 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=whisper_datas,
+    datas=whisper_datas + app_datas,
     hiddenimports=hidden_imports,
     hookspath=[],
     hooksconfig={},
@@ -68,5 +74,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,  # Add icon path here if you have one
+    icon='icon.ico',
 )

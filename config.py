@@ -1,55 +1,54 @@
 """
-ConfigManager - Gestion de la configuration persistante.
+ConfigManager - Persistent configuration management.
 
-Sauvegarde et charge les paramètres utilisateur depuis un fichier JSON.
+Saves and loads user settings from a JSON file.
 """
 
 import json
 import os
 from typing import Any, Optional
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass, asdict
 
 
 @dataclass
 class Config:
-    """Structure de configuration de l'application."""
+    """Application configuration structure."""
 
     # Joystick
     joystick_name: str = ""
     button_id: int = -1
 
     # Whisper
-    mode: str = "cpu"  # "cpu" ou "gpu"
     model: str = "small"  # "tiny", "small", "medium"
 
     # Injection
     injection_delay_ms: int = 100
-    chat_key: str = "enter"  # Touche pour ouvrir le chat (enter, t, y, etc.)
+    chat_key: str = "enter"  # Key to open chat (enter, t, y, etc.)
 
-    # Fenêtre
-    window_geometry: str = "400x820+100+100"
+    # Window
+    window_geometry: str = "400x700+100+100"
 
     # Audio
     audio_device: Optional[int] = None
 
-    # Démarrage automatique
+    # Auto-start
     auto_start: bool = False
 
 
 class ConfigManager:
-    """Gestionnaire de configuration avec persistence JSON."""
+    """Configuration manager with JSON persistence."""
 
     DEFAULT_FILENAME = "config.json"
 
     def __init__(self, config_path: Optional[str] = None):
         """
-        Initialise le gestionnaire de configuration.
+        Initialize the configuration manager.
 
         Args:
-            config_path: Chemin du fichier de config (None = dossier de l'app)
+            config_path: Config file path (None = app folder)
         """
         if config_path is None:
-            # Utiliser le dossier de l'application
+            # Use application folder
             app_dir = os.path.dirname(os.path.abspath(__file__))
             config_path = os.path.join(app_dir, self.DEFAULT_FILENAME)
 
@@ -58,10 +57,10 @@ class ConfigManager:
 
     def load(self) -> Config:
         """
-        Charge la configuration depuis le fichier.
+        Load configuration from file.
 
         Returns:
-            L'objet Config chargé (ou les valeurs par défaut si fichier absent)
+            Loaded Config object (or defaults if file missing)
         """
         if not os.path.exists(self.config_path):
             return self.config
@@ -70,40 +69,40 @@ class ConfigManager:
             with open(self.config_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
 
-            # Mettre à jour uniquement les champs présents dans le fichier
+            # Update only fields present in the file
             for key, value in data.items():
                 if hasattr(self.config, key):
                     setattr(self.config, key, value)
 
         except (json.JSONDecodeError, IOError) as e:
-            print(f"Erreur lors du chargement de la config: {e}")
+            print(f"Error loading config: {e}")
 
         return self.config
 
     def save(self) -> bool:
         """
-        Sauvegarde la configuration dans le fichier.
+        Save configuration to file.
 
         Returns:
-            True si la sauvegarde a réussi
+            True if save succeeded
         """
         try:
             with open(self.config_path, 'w', encoding='utf-8') as f:
                 json.dump(asdict(self.config), f, indent=2, ensure_ascii=False)
             return True
         except IOError as e:
-            print(f"Erreur lors de la sauvegarde de la config: {e}")
+            print(f"Error saving config: {e}")
             return False
 
     def get(self, key: str, default: Any = None) -> Any:
-        """Récupère une valeur de configuration."""
+        """Get a configuration value."""
         return getattr(self.config, key, default)
 
     def set(self, key: str, value: Any) -> None:
-        """Définit une valeur de configuration."""
+        """Set a configuration value."""
         if hasattr(self.config, key):
             setattr(self.config, key, value)
 
     def reset(self) -> None:
-        """Réinitialise la configuration aux valeurs par défaut."""
+        """Reset configuration to defaults."""
         self.config = Config()

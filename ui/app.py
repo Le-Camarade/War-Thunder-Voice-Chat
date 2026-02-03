@@ -1,11 +1,13 @@
 """
-App - Fenêtre principale de War Thunder Voice Chat.
+App - Main window for War Thunder Voice Chat.
 
-Intègre tous les composants: joystick, audio, transcription, injection.
+Integrates all components: joystick, audio, transcription, injection.
 """
 
 import customtkinter as ctk
 import threading
+import os
+import sys
 from typing import Optional
 
 from .widgets import StatusLED, MessageDisplay, VolumeIndicator
@@ -20,43 +22,62 @@ from config import ConfigManager
 # System tray
 try:
     import pystray
-    from PIL import Image, ImageDraw
+    from PIL import Image
     TRAY_AVAILABLE = True
 except ImportError:
     TRAY_AVAILABLE = False
 
 
-def create_tray_icon_image(size=64, color="#4488ff"):
-    """Crée une image pour l'icône du system tray."""
-    image = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+def get_resource_path(filename: str) -> str:
+    """Return the path to a resource (PyInstaller compatible)."""
+    if getattr(sys, 'frozen', False):
+        # PyInstaller: resources in temp folder
+        base_path = sys._MEIPASS
+    else:
+        # Python script: parent folder (project root)
+        base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base_path, filename)
+
+
+def load_app_icon():
+    """Load the application icon."""
+    if not TRAY_AVAILABLE:
+        return None
+
+    # Try to load the logo
+    logo_path = get_resource_path("wt_radio_logo_minimalism.png")
+    if os.path.exists(logo_path):
+        try:
+            return Image.open(logo_path)
+        except Exception:
+            pass
+
+    # Fallback: generated icon
+    from PIL import ImageDraw
+    image = Image.new('RGBA', (64, 64), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
-    # Cercle principal (microphone stylisé)
-    margin = size // 8
-    draw.ellipse(
-        [margin, margin, size - margin, size - margin],
-        fill=color
-    )
-    # Cercle intérieur
-    inner_margin = size // 3
-    draw.ellipse(
-        [inner_margin, inner_margin, size - inner_margin, size - inner_margin],
-        fill="#1a1a1a"
-    )
+    draw.ellipse([8, 8, 56, 56], fill="#4488ff")
+    draw.ellipse([21, 21, 43, 43], fill="#1a1a1a")
     return image
 
 
 class App(ctk.CTk):
-    """Fenêtre principale de l'application."""
+    """Main application window."""
 
     def __init__(self):
         super().__init__()
 
-        # Configuration de la fenêtre
+        # Window configuration
         self.title("War Thunder Voice Chat")
-        self.geometry("400x820")
+        self.geometry("400x700")
         self.resizable(False, False)
 
-        # Thème sombre
+        # Window icon
+        icon_path = get_resource_path("icon.ico")
+        if os.path.exists(icon_path):
+            self.iconbitmap(icon_path)
+
+        # Dark theme
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
 
@@ -64,11 +85,11 @@ class App(ctk.CTk):
         self._tray_icon = None
         self._is_hidden = False
 
-        # Gestionnaire de configuration
+        # Configuration manager
         self._config_manager = ConfigManager()
         self._config_manager.load()
 
-        # Composants core
+        # Core components
         self._joystick_manager = JoystickManager()
         self._recorder = AudioRecorder()
         self._transcriber: Optional[WhisperTranscriber] = None
@@ -77,48 +98,47 @@ class App(ctk.CTk):
             chat_key=self._config_manager.config.chat_key
         )
 
-        # État
+        # State
         self._is_recording = False
         self._current_state = "idle"
 
-        # Créer l'interface
+        # Create interface
         self._create_widgets()
 
-        # Initialiser les joysticks
+        # Initialize joysticks
         self._refresh_joysticks()
 
-        # Charger la configuration sauvegardée
+        # Load saved configuration
         self._load_saved_config()
 
-        # Configurer les callbacks joystick
+        # Setup joystick callbacks
         self._setup_joystick_callbacks()
 
-        # Démarrer le polling joystick
+        # Start joystick polling
         self._joystick_manager.start()
 
-        # Bind fermeture
+        # Bind close event
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _create_widgets(self) -> None:
-        """Crée les widgets de l'interface."""
+        """Create interface widgets."""
 
-        # === Zone de statut ===
+        # === Status zone ===
         status_frame = ctk.CTkFrame(self)
         status_frame.pack(fill="x", padx=20, pady=20)
 
         self._status_led = StatusLED(status_frame, size=50)
         self._status_led.pack(pady=15)
 
-        # Indicateur de volume
+        # Volume indicator
         self._volume_indicator = VolumeIndicator(status_frame, width=200, height=15)
         self._volume_indicator.pack(pady=(0, 10))
 
-        # === Paramètres ===
+        # === Settings ===
         self._settings_frame = SettingsFrame(
             self,
             on_joystick_change=self._on_joystick_change,
             on_button_change=self._on_button_change,
-            on_mode_change=self._on_mode_change,
             on_model_change=self._on_model_change,
             on_chat_key_change=self._on_chat_key_change,
             on_auto_start_change=self._on_auto_start_change
@@ -126,20 +146,20 @@ class App(ctk.CTk):
         self._settings_frame.pack(fill="x", padx=20, pady=(0, 10))
         self._settings_frame.set_refresh_callback(self._refresh_joysticks)
 
-        # === Dernier message ===
+        # === Last message ===
         self._message_display = MessageDisplay(self)
         self._message_display.pack(fill="x", padx=20, pady=(0, 10))
 
-        # === Bouton minimize ===
+        # === Minimize button ===
         self._minimize_btn = ctk.CTkButton(
             self,
-            text="Réduire dans la barre",
+            text="Minimize to Tray",
             command=self._minimize_to_tray
         )
         self._minimize_btn.pack(pady=(10, 20))
 
     def _refresh_joysticks(self) -> None:
-        """Rafraîchit la liste des joysticks."""
+        """Refresh joystick list."""
         joysticks = self._joystick_manager.refresh()
         names = [j.name for j in joysticks]
         self._settings_frame.update_joysticks(names)
@@ -147,21 +167,21 @@ class App(ctk.CTk):
         if not names:
             return
 
-        # Re-sélectionner le joystick sauvegardé si disponible
+        # Re-select saved joystick if available
         saved_name = self._config_manager.config.joystick_name
         if saved_name and saved_name in names:
             self._settings_frame.set_joystick(saved_name)
             self._joystick_manager.select_joystick_by_name(saved_name)
         else:
-            # Sélectionner le premier joystick par défaut
+            # Select first joystick by default
             self._joystick_manager.select_joystick_by_name(names[0])
             self._config_manager.config.joystick_name = names[0]
 
     def _load_saved_config(self) -> None:
-        """Charge la configuration sauvegardée."""
+        """Load saved configuration."""
         config = self._config_manager.config
 
-        # Joystick et bouton
+        # Joystick and button
         if config.joystick_name:
             self._settings_frame.set_joystick(config.joystick_name)
             self._joystick_manager.select_joystick_by_name(config.joystick_name)
@@ -169,18 +189,17 @@ class App(ctk.CTk):
             self._settings_frame.set_button(config.button_id)
             self._joystick_manager.set_ptt_button(config.button_id)
 
-        # Mode et modèle
-        self._settings_frame.set_mode(config.mode)
+        # Model
         self._settings_frame.set_model(config.model)
 
-        # Touche chat
+        # Chat key
         self._settings_frame.set_chat_key(config.chat_key)
         self._injector.set_chat_key(config.chat_key)
 
         # Auto-start
         self._settings_frame.set_auto_start(config.auto_start)
 
-        # Géométrie
+        # Geometry
         if config.window_geometry:
             try:
                 self.geometry(config.window_geometry)
@@ -188,103 +207,93 @@ class App(ctk.CTk):
                 pass
 
     def _setup_joystick_callbacks(self) -> None:
-        """Configure les callbacks du joystick."""
+        """Setup joystick callbacks."""
         self._joystick_manager.set_on_button_down(self._on_ptt_press)
         self._joystick_manager.set_on_button_up(self._on_ptt_release)
         self._joystick_manager.set_on_any_button(self._on_any_button)
 
     def _on_joystick_change(self, name: str) -> None:
-        """Appelé quand le joystick sélectionné change."""
+        """Called when selected joystick changes."""
         self._joystick_manager.select_joystick_by_name(name)
         self._config_manager.config.joystick_name = name
         self._config_manager.save()
 
     def _on_button_change(self, button_id: int) -> None:
-        """Appelé quand le bouton PTT change."""
+        """Called when PTT button changes."""
         self._joystick_manager.set_ptt_button(button_id)
         self._config_manager.config.button_id = button_id
         self._config_manager.save()
 
-    def _on_mode_change(self, mode: str) -> None:
-        """Appelé quand le mode CPU/GPU change."""
-        self._config_manager.config.mode = mode
-        self._config_manager.save()
-
-        # Décharger le modèle si chargé (sera rechargé avec les nouveaux params)
-        if self._transcriber:
-            device = "cuda" if mode == "gpu" else "cpu"
-            self._transcriber.change_settings(device=device)
-
     def _on_model_change(self, model: str) -> None:
-        """Appelé quand le modèle Whisper change."""
+        """Called when Whisper model changes."""
         self._config_manager.config.model = model
         self._config_manager.save()
 
-        # Mettre à jour le transcriber si chargé
+        # Update transcriber if loaded
         if self._transcriber:
             self._transcriber.change_settings(model_size=model)
 
     def _on_chat_key_change(self, key: str) -> None:
-        """Appelé quand la touche chat change."""
+        """Called when chat key changes."""
         self._injector.set_chat_key(key)
         self._config_manager.config.chat_key = key
         self._config_manager.save()
 
     def _on_auto_start_change(self, enabled: bool) -> None:
-        """Appelé quand l'auto-start est activé/désactivé."""
+        """Called when auto-start is toggled."""
         set_auto_start(enabled)
         self._config_manager.config.auto_start = enabled
         self._config_manager.save()
 
     def _on_any_button(self, joystick_id: int, button_id: int) -> None:
-        """Appelé quand n'importe quel bouton est pressé (pour l'assignation)."""
+        """Called when any button is pressed (for assignment)."""
         selector = self._settings_frame.button_selector
         if selector.is_listening:
-            # Utiliser after() pour mettre à jour l'UI depuis le thread principal
+            # Use after() to update UI from main thread
             self.after(0, lambda: selector.stop_listening(button_id))
 
     def _on_ptt_press(self, joystick_id: int, button_id: int) -> None:
-        """Appelé quand le bouton PTT est pressé (depuis thread pygame)."""
-        # Exécuter sur le thread principal Tkinter
+        """Called when PTT button is pressed (from pygame thread)."""
+        # Execute on main Tkinter thread
         self.after(0, self._do_ptt_press)
 
     def _do_ptt_press(self) -> None:
-        """Démarre l'enregistrement (thread principal)."""
+        """Start recording (main thread)."""
         if self._is_recording or self._current_state != "idle":
             return
 
         self._is_recording = True
         self._set_state("recording")
 
-        # Démarrer l'enregistrement
+        # Start recording
         self._recorder.start_recording()
 
-        # Démarrer la mise à jour du volume
+        # Start volume update
         self._update_volume()
 
     def _on_ptt_release(self, joystick_id: int, button_id: int) -> None:
-        """Appelé quand le bouton PTT est relâché (depuis thread pygame)."""
-        # Exécuter sur le thread principal Tkinter
+        """Called when PTT button is released (from pygame thread)."""
+        # Execute on main Tkinter thread
         self.after(0, self._do_ptt_release)
 
     def _do_ptt_release(self) -> None:
-        """Arrête l'enregistrement et lance la transcription (thread principal)."""
+        """Stop recording and start transcription (main thread)."""
         if not self._is_recording:
             return
 
         self._is_recording = False
 
-        # Arrêter l'enregistrement et récupérer l'audio
+        # Stop recording and get audio
         audio = self._recorder.stop_recording()
 
-        # Réinitialiser l'indicateur de volume
+        # Reset volume indicator
         self._volume_indicator.set_level(0)
 
         if audio.size == 0:
             self._set_state("idle")
             return
 
-        # Lancer la transcription dans un thread
+        # Start transcription in thread
         self._set_state("transcribing")
         thread = threading.Thread(
             target=self._transcribe_and_inject,
@@ -294,37 +303,36 @@ class App(ctk.CTk):
         thread.start()
 
     def _update_volume(self) -> None:
-        """Met à jour l'indicateur de volume pendant l'enregistrement."""
+        """Update volume indicator during recording."""
         if not self._is_recording:
             return
 
-        # Calculer le niveau de volume à partir du buffer
+        # Calculate volume level from buffer
         import numpy as np
         try:
             if self._recorder._buffer:
-                # Prendre les derniers échantillons
+                # Get recent samples
                 recent = self._recorder._buffer[-1] if self._recorder._buffer else np.array([0])
                 rms = np.sqrt(np.mean(recent ** 2))
-                # Normaliser (0.0 à 1.0)
+                # Normalize (0.0 to 1.0)
                 level = min(1.0, rms * 10)
                 self._volume_indicator.set_level(level)
         except:
             pass
 
-        # Continuer la mise à jour
+        # Continue update
         if self._is_recording:
             self.after(50, self._update_volume)
 
     def _transcribe_and_inject(self, audio) -> None:
-        """Transcrit l'audio et injecte le texte (dans un thread)."""
+        """Transcribe audio and inject text (in thread)."""
         try:
-            # Initialiser le transcriber si nécessaire
+            # Initialize transcriber if needed
             if self._transcriber is None:
                 config = self._config_manager.config
-                device = "cuda" if config.mode == "gpu" else "cpu"
                 self._transcriber = WhisperTranscriber(
                     model_size=config.model,
-                    device=device
+                    device="cpu"
                 )
 
             # Transcription
@@ -334,7 +342,7 @@ class App(ctk.CTk):
                 self.after(0, lambda: self._set_state("idle"))
                 return
 
-            # Mettre à jour l'affichage du message
+            # Update message display
             self.after(0, lambda: self._message_display.set_message(text))
 
             # Injection
@@ -343,52 +351,56 @@ class App(ctk.CTk):
 
             if success:
                 self.after(0, lambda: self._set_state("sent"))
-                # Retour à idle après 1.5s
+                # Return to idle after 1.5s
                 self.after(1500, lambda: self._set_state("idle"))
             else:
                 self.after(0, lambda: self._set_state("error"))
                 self.after(2000, lambda: self._set_state("idle"))
 
         except Exception as e:
-            print(f"Erreur transcription/injection: {e}")
+            print(f"Transcription/injection error: {e}")
             self.after(0, lambda: self._set_state("error"))
             self.after(2000, lambda: self._set_state("idle"))
 
     def _set_state(self, state: str) -> None:
-        """Change l'état de l'application."""
+        """Change application state."""
         self._current_state = state
         self._status_led.set_state(state)
 
     def _minimize_to_tray(self) -> None:
-        """Minimise l'application dans le system tray."""
+        """Minimize application to system tray."""
         if not TRAY_AVAILABLE:
-            # Fallback: minimiser normalement
+            # Fallback: minimize normally
             self.iconify()
             return
 
-        # Créer l'icône du tray si pas encore fait
+        # Create tray icon if not done yet
         if self._tray_icon is None:
             self._create_tray_icon()
 
-        # Cacher la fenêtre
+        # Hide window
         self.withdraw()
         self._is_hidden = True
 
-        # Afficher l'icône dans le tray
+        # Show tray icon
         if self._tray_icon and not self._tray_icon.visible:
             threading.Thread(target=self._tray_icon.run, daemon=True).start()
 
     def _create_tray_icon(self) -> None:
-        """Crée l'icône du system tray."""
+        """Create system tray icon."""
         if not TRAY_AVAILABLE:
             return
 
-        image = create_tray_icon_image()
+        # Load logo
+        image = load_app_icon()
+        if image:
+            # Resize for tray (64x64 max)
+            image = image.resize((64, 64), Image.Resampling.LANCZOS)
 
         menu = pystray.Menu(
-            pystray.MenuItem("Restaurer", self._restore_from_tray, default=True),
+            pystray.MenuItem("Restore", self._restore_from_tray, default=True),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Quitter", self._quit_from_tray)
+            pystray.MenuItem("Quit", self._quit_from_tray)
         )
 
         self._tray_icon = pystray.Icon(
@@ -399,41 +411,41 @@ class App(ctk.CTk):
         )
 
     def _restore_from_tray(self, icon=None, item=None) -> None:
-        """Restaure la fenêtre depuis le system tray."""
+        """Restore window from system tray."""
         self._is_hidden = False
 
-        # Restaurer la fenêtre sur le thread principal
+        # Restore window on main thread
         self.after(0, self._do_restore)
 
     def _do_restore(self) -> None:
-        """Effectue la restauration (thread principal)."""
+        """Perform restoration (main thread)."""
         self.deiconify()
         self.lift()
         self.focus_force()
 
     def _quit_from_tray(self, icon=None, item=None) -> None:
-        """Quitte l'application depuis le tray."""
-        # Arrêter l'icône du tray
+        """Quit application from tray."""
+        # Stop tray icon
         if self._tray_icon:
             self._tray_icon.stop()
 
-        # Fermer l'application sur le thread principal
+        # Close application on main thread
         self.after(0, self._on_close)
 
     def _on_close(self) -> None:
-        """Appelé lors de la fermeture de l'application."""
-        # Sauvegarder la géométrie
+        """Called when closing the application."""
+        # Save geometry
         self._config_manager.config.window_geometry = self.geometry()
         self._config_manager.save()
 
-        # Arrêter l'icône du tray
+        # Stop tray icon
         if self._tray_icon:
             try:
                 self._tray_icon.stop()
             except:
                 pass
 
-        # Nettoyer les ressources
+        # Cleanup resources
         self._joystick_manager.cleanup()
         if self._transcriber:
             self._transcriber.unload_model()

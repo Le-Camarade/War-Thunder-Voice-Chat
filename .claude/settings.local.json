@@ -4,7 +4,8 @@
       "Bash(venv/Scripts/pip install:*)",
       "Bash(venv/Scripts/python:*)",
       "Bash(del \"c:\\\\Users\\\\nicol\\\\Documents\\\\2026_WT_RADIO_MOD\\\\test_inject.py\")",
-      "Bash(cmd /c del \"c:\\\\Users\\\\nicol\\\\Documents\\\\2026_WT_RADIO_MOD\\\\test_inject.py\")"
+      "Bash(cmd /c del \"c:\\\\Users\\\\nicol\\\\Documents\\\\2026_WT_RADIO_MOD\\\\test_inject.py\")",
+      "Bash(python:*)"
     ]
   }
 }
