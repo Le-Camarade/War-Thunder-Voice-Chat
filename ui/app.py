@@ -14,7 +14,35 @@ from core.joystick import JoystickManager
 from core.recorder import AudioRecorder
 from core.transcriber import WhisperTranscriber
 from core.injector import ChatInjector
+from core.autostart import set_auto_start
 from config import ConfigManager
+
+# System tray
+try:
+    import pystray
+    from PIL import Image, ImageDraw
+    TRAY_AVAILABLE = True
+except ImportError:
+    TRAY_AVAILABLE = False
+
+
+def create_tray_icon_image(size=64, color="#4488ff"):
+    """Crée une image pour l'icône du system tray."""
+    image = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    # Cercle principal (microphone stylisé)
+    margin = size // 8
+    draw.ellipse(
+        [margin, margin, size - margin, size - margin],
+        fill=color
+    )
+    # Cercle intérieur
+    inner_margin = size // 3
+    draw.ellipse(
+        [inner_margin, inner_margin, size - inner_margin, size - inner_margin],
+        fill="#1a1a1a"
+    )
+    return image
 
 
 class App(ctk.CTk):
@@ -32,6 +60,10 @@ class App(ctk.CTk):
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
 
+        # System tray
+        self._tray_icon = None
+        self._is_hidden = False
+
         # Gestionnaire de configuration
         self._config_manager = ConfigManager()
         self._config_manager.load()
@@ -41,7 +73,8 @@ class App(ctk.CTk):
         self._recorder = AudioRecorder()
         self._transcriber: Optional[WhisperTranscriber] = None
         self._injector = ChatInjector(
-            delay_ms=self._config_manager.config.injection_delay_ms
+            delay_ms=self._config_manager.config.injection_delay_ms,
+            chat_key=self._config_manager.config.chat_key
         )
 
         # État
@@ -86,7 +119,9 @@ class App(ctk.CTk):
             on_joystick_change=self._on_joystick_change,
             on_button_change=self._on_button_change,
             on_mode_change=self._on_mode_change,
-            on_model_change=self._on_model_change
+            on_model_change=self._on_model_change,
+            on_chat_key_change=self._on_chat_key_change,
+            on_auto_start_change=self._on_auto_start_change
         )
         self._settings_frame.pack(fill="x", padx=20, pady=(0, 10))
         self._settings_frame.set_refresh_callback(self._refresh_joysticks)
@@ -98,8 +133,8 @@ class App(ctk.CTk):
         # === Bouton minimize ===
         self._minimize_btn = ctk.CTkButton(
             self,
-            text="Réduire",
-            command=self.iconify
+            text="Réduire dans la barre",
+            command=self._minimize_to_tray
         )
         self._minimize_btn.pack(pady=(10, 20))
 
@@ -137,6 +172,13 @@ class App(ctk.CTk):
         # Mode et modèle
         self._settings_frame.set_mode(config.mode)
         self._settings_frame.set_model(config.model)
+
+        # Touche chat
+        self._settings_frame.set_chat_key(config.chat_key)
+        self._injector.set_chat_key(config.chat_key)
+
+        # Auto-start
+        self._settings_frame.set_auto_start(config.auto_start)
 
         # Géométrie
         if config.window_geometry:
@@ -181,6 +223,18 @@ class App(ctk.CTk):
         # Mettre à jour le transcriber si chargé
         if self._transcriber:
             self._transcriber.change_settings(model_size=model)
+
+    def _on_chat_key_change(self, key: str) -> None:
+        """Appelé quand la touche chat change."""
+        self._injector.set_chat_key(key)
+        self._config_manager.config.chat_key = key
+        self._config_manager.save()
+
+    def _on_auto_start_change(self, enabled: bool) -> None:
+        """Appelé quand l'auto-start est activé/désactivé."""
+        set_auto_start(enabled)
+        self._config_manager.config.auto_start = enabled
+        self._config_manager.save()
 
     def _on_any_button(self, joystick_id: int, button_id: int) -> None:
         """Appelé quand n'importe quel bouton est pressé (pour l'assignation)."""
@@ -305,11 +359,79 @@ class App(ctk.CTk):
         self._current_state = state
         self._status_led.set_state(state)
 
+    def _minimize_to_tray(self) -> None:
+        """Minimise l'application dans le system tray."""
+        if not TRAY_AVAILABLE:
+            # Fallback: minimiser normalement
+            self.iconify()
+            return
+
+        # Créer l'icône du tray si pas encore fait
+        if self._tray_icon is None:
+            self._create_tray_icon()
+
+        # Cacher la fenêtre
+        self.withdraw()
+        self._is_hidden = True
+
+        # Afficher l'icône dans le tray
+        if self._tray_icon and not self._tray_icon.visible:
+            threading.Thread(target=self._tray_icon.run, daemon=True).start()
+
+    def _create_tray_icon(self) -> None:
+        """Crée l'icône du system tray."""
+        if not TRAY_AVAILABLE:
+            return
+
+        image = create_tray_icon_image()
+
+        menu = pystray.Menu(
+            pystray.MenuItem("Restaurer", self._restore_from_tray, default=True),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Quitter", self._quit_from_tray)
+        )
+
+        self._tray_icon = pystray.Icon(
+            "WT Voice Chat",
+            image,
+            "War Thunder Voice Chat",
+            menu
+        )
+
+    def _restore_from_tray(self, icon=None, item=None) -> None:
+        """Restaure la fenêtre depuis le system tray."""
+        self._is_hidden = False
+
+        # Restaurer la fenêtre sur le thread principal
+        self.after(0, self._do_restore)
+
+    def _do_restore(self) -> None:
+        """Effectue la restauration (thread principal)."""
+        self.deiconify()
+        self.lift()
+        self.focus_force()
+
+    def _quit_from_tray(self, icon=None, item=None) -> None:
+        """Quitte l'application depuis le tray."""
+        # Arrêter l'icône du tray
+        if self._tray_icon:
+            self._tray_icon.stop()
+
+        # Fermer l'application sur le thread principal
+        self.after(0, self._on_close)
+
     def _on_close(self) -> None:
         """Appelé lors de la fermeture de l'application."""
         # Sauvegarder la géométrie
         self._config_manager.config.window_geometry = self.geometry()
         self._config_manager.save()
+
+        # Arrêter l'icône du tray
+        if self._tray_icon:
+            try:
+                self._tray_icon.stop()
+            except:
+                pass
 
         # Nettoyer les ressources
         self._joystick_manager.cleanup()

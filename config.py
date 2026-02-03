@@ -23,13 +23,17 @@ class Config:
     model: str = "small"  # "tiny", "small", "medium"
 
     # Injection
-    injection_delay_ms: int = 50
+    injection_delay_ms: int = 100
+    chat_key: str = "enter"  # Touche pour ouvrir le chat (enter, t, y, etc.)
 
     # Fenêtre
     window_geometry: str = "400x820+100+100"
 
     # Audio
     audio_device: Optional[int] = None
+
+    # Démarrage automatique
+    auto_start: bool = False
 
 
 class ConfigManager:

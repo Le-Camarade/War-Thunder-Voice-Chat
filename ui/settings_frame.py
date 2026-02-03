@@ -23,6 +23,8 @@ class SettingsFrame(ctk.CTkFrame):
         on_button_change: Optional[Callable[[int], None]] = None,
         on_mode_change: Optional[Callable[[str], None]] = None,
         on_model_change: Optional[Callable[[str], None]] = None,
+        on_chat_key_change: Optional[Callable[[str], None]] = None,
+        on_auto_start_change: Optional[Callable[[bool], None]] = None,
         **kwargs
     ):
         super().__init__(master, **kwargs)
@@ -31,6 +33,8 @@ class SettingsFrame(ctk.CTkFrame):
         self._on_button_change = on_button_change
         self._on_mode_change = on_mode_change
         self._on_model_change = on_model_change
+        self._on_chat_key_change = on_chat_key_change
+        self._on_auto_start_change = on_auto_start_change
 
         self._create_widgets()
 
@@ -130,7 +134,35 @@ class SettingsFrame(ctk.CTkFrame):
             command=self._on_model_selected
         )
         self._model_combo.set("small")
-        self._model_combo.grid(row=7, column=0, sticky="w", padx=10, pady=(0, 15))
+        self._model_combo.grid(row=7, column=0, sticky="w", padx=10, pady=(0, 10))
+
+        # === Touche Chat ===
+        chat_key_label = ctk.CTkLabel(
+            self,
+            text="Touche chat (jeu):",
+            font=ctk.CTkFont(size=13),
+            anchor="w"
+        )
+        chat_key_label.grid(row=8, column=0, sticky="w", padx=10, pady=(10, 5))
+
+        self._chat_key_combo = ctk.CTkComboBox(
+            self,
+            values=["enter", "t", "y", "u"],
+            width=150,
+            command=self._on_chat_key_selected
+        )
+        self._chat_key_combo.set("enter")
+        self._chat_key_combo.grid(row=9, column=0, sticky="w", padx=10, pady=(0, 10))
+
+        # === Auto-start ===
+        self._auto_start_var = ctk.BooleanVar(value=False)
+        self._auto_start_checkbox = ctk.CTkCheckBox(
+            self,
+            text="Démarrer avec Windows",
+            variable=self._auto_start_var,
+            command=self._on_auto_start_toggled
+        )
+        self._auto_start_checkbox.grid(row=10, column=0, sticky="w", padx=10, pady=(5, 15))
 
         # Configurer le grid
         self.grid_columnconfigure(0, weight=1)
@@ -163,6 +195,16 @@ class SettingsFrame(ctk.CTkFrame):
         """Appelé quand le modèle est changé."""
         if self._on_model_change:
             self._on_model_change(choice)
+
+    def _on_chat_key_selected(self, choice: str) -> None:
+        """Appelé quand la touche chat est changée."""
+        if self._on_chat_key_change:
+            self._on_chat_key_change(choice)
+
+    def _on_auto_start_toggled(self) -> None:
+        """Appelé quand l'auto-start est coché/décoché."""
+        if self._on_auto_start_change:
+            self._on_auto_start_change(self._auto_start_var.get())
 
     def _request_refresh(self) -> None:
         """Demande un rafraîchissement des joysticks."""
@@ -198,6 +240,14 @@ class SettingsFrame(ctk.CTkFrame):
         """Définit le modèle Whisper."""
         self._model_combo.set(model)
 
+    def set_chat_key(self, key: str) -> None:
+        """Définit la touche chat."""
+        self._chat_key_combo.set(key)
+
+    def set_auto_start(self, enabled: bool) -> None:
+        """Définit l'état de l'auto-start."""
+        self._auto_start_var.set(enabled)
+
     @property
     def button_selector(self) -> JoystickButtonSelector:
         """Retourne le sélecteur de bouton pour l'écoute externe."""
@@ -209,5 +259,6 @@ class SettingsFrame(ctk.CTkFrame):
             "joystick": self._joystick_combo.get(),
             "button": self._button_selector.get_button(),
             "mode": self._mode_var.get(),
-            "model": self._model_combo.get()
+            "model": self._model_combo.get(),
+            "chat_key": self._chat_key_combo.get()
         }
