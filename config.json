@@ -1,0 +1,9 @@
+{
+  "joystick_name": "",
+  "button_id": -1,
+  "mode": "cpu",
+  "model": "small",
+  "injection_delay_ms": 50,
+  "window_geometry": "400x820+386+119",
+  "audio_device": null
+}
