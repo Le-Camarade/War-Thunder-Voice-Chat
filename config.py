@@ -6,6 +6,7 @@ Saves and loads user settings from a JSON file.
 
 import json
 import os
+import sys
 from typing import Any, Optional
 from dataclasses import dataclass, asdict
 
@@ -20,6 +21,7 @@ class Config:
 
     # Whisper
     model: str = "small"  # "tiny", "small", "medium"
+    translate_to_english: bool = True  # Translate any language to English
 
     # Injection
     injection_delay_ms: int = 100
@@ -33,6 +35,17 @@ class Config:
 
     # Auto-start
     auto_start: bool = False
+
+    # TTS
+    tts_engine_type: str = "offline"  # "offline" (pyttsx3) or "online" (edge-tts)
+    tts_enabled: bool = False
+    tts_own_username: str = ""
+    tts_poll_interval_ms: int = 500
+    tts_voice_id: str = ""
+    tts_rate: int = 150
+    tts_channel_team: bool = True
+    tts_channel_all: bool = True
+    tts_channel_squadron: bool = False
 
 
 class ConfigManager:
@@ -48,8 +61,12 @@ class ConfigManager:
             config_path: Config file path (None = app folder)
         """
         if config_path is None:
-            # Use application folder
-            app_dir = os.path.dirname(os.path.abspath(__file__))
+            if getattr(sys, 'frozen', False):
+                # PyInstaller: save next to the .exe
+                app_dir = os.path.dirname(sys.executable)
+            else:
+                # Normal Python: use script directory
+                app_dir = os.path.dirname(os.path.abspath(__file__))
             config_path = os.path.join(app_dir, self.DEFAULT_FILENAME)
 
         self.config_path = config_path

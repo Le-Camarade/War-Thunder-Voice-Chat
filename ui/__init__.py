@@ -1,6 +1,7 @@
 from .app import App
 from .widgets import StatusLED, JoystickButtonSelector, VolumeIndicator, MessageDisplay
 from .settings_frame import SettingsFrame
+from .tts_settings import TTSSettingsFrame
 
 __all__ = [
     "App",
@@ -8,5 +9,6 @@ __all__ = [
     "JoystickButtonSelector",
     "VolumeIndicator",
     "MessageDisplay",
-    "SettingsFrame"
+    "SettingsFrame",
+    "TTSSettingsFrame"
 ]

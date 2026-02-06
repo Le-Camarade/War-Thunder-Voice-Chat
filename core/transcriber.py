@@ -58,15 +58,17 @@ class WhisperTranscriber:
             self._model = whisper.load_model(self.model_size, device=self.device)
             print("Modèle chargé.")
 
-    def transcribe(self, audio: np.ndarray) -> str:
+    def transcribe(self, audio: np.ndarray, translate: bool = False) -> str:
         """
-        Transcrit l'audio en texte anglais.
+        Transcrit l'audio en texte.
 
         Args:
             audio: numpy array float32, sample rate 16kHz, mono
+            translate: Si True, traduit depuis n'importe quelle langue vers l'anglais.
+                       Si False, transcrit l'audio tel quel en anglais.
 
         Returns:
-            Texte transcrit
+            Texte transcrit (ou traduit)
         """
         if audio.size == 0:
             return ""
@@ -77,12 +79,24 @@ class WhisperTranscriber:
         if audio.dtype != np.float32:
             audio = audio.astype(np.float32)
 
-        # Transcription
-        result = self._model.transcribe(
-            audio,
-            language="en",
-            fp16=(self.device == "cuda")
-        )
+        if translate:
+            # Translate mode: auto-detect source language → English output
+            result = self._model.transcribe(
+                audio,
+                task="translate",
+                fp16=(self.device == "cuda"),
+                condition_on_previous_text=False,
+                no_speech_threshold=0.4,
+            )
+        else:
+            # Transcribe mode: transcribe English speech as-is
+            result = self._model.transcribe(
+                audio,
+                language="en",
+                task="transcribe",
+                fp16=(self.device == "cuda"),
+                condition_on_previous_text=False,
+            )
 
         return result["text"].strip()
 

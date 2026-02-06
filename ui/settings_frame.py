@@ -24,6 +24,7 @@ class SettingsFrame(ctk.CTkFrame):
         on_model_change: Optional[Callable[[str], None]] = None,
         on_chat_key_change: Optional[Callable[[str], None]] = None,
         on_auto_start_change: Optional[Callable[[bool], None]] = None,
+        on_translate_change: Optional[Callable[[bool], None]] = None,
         **kwargs
     ):
         super().__init__(master, **kwargs)
@@ -33,6 +34,7 @@ class SettingsFrame(ctk.CTkFrame):
         self._on_model_change = on_model_change
         self._on_chat_key_change = on_chat_key_change
         self._on_auto_start_change = on_auto_start_change
+        self._on_translate_change = on_translate_change
 
         self._create_widgets()
 
@@ -120,6 +122,16 @@ class SettingsFrame(ctk.CTkFrame):
         self._chat_key_combo.set("enter")
         self._chat_key_combo.grid(row=7, column=0, sticky="w", padx=10, pady=(0, 10))
 
+        # === Translate ===
+        self._translate_var = ctk.BooleanVar(value=True)
+        self._translate_checkbox = ctk.CTkCheckBox(
+            self,
+            text="Translate to English",
+            variable=self._translate_var,
+            command=self._on_translate_toggled
+        )
+        self._translate_checkbox.grid(row=8, column=0, sticky="w", padx=10, pady=(5, 5))
+
         # === Auto-start ===
         self._auto_start_var = ctk.BooleanVar(value=False)
         self._auto_start_checkbox = ctk.CTkCheckBox(
@@ -128,7 +140,7 @@ class SettingsFrame(ctk.CTkFrame):
             variable=self._auto_start_var,
             command=self._on_auto_start_toggled
         )
-        self._auto_start_checkbox.grid(row=8, column=0, sticky="w", padx=10, pady=(5, 15))
+        self._auto_start_checkbox.grid(row=9, column=0, sticky="w", padx=10, pady=(5, 15))
 
         # Configure grid
         self.grid_columnconfigure(0, weight=1)
@@ -152,6 +164,11 @@ class SettingsFrame(ctk.CTkFrame):
         """Called when the chat key is changed."""
         if self._on_chat_key_change:
             self._on_chat_key_change(choice)
+
+    def _on_translate_toggled(self) -> None:
+        """Called when translate is toggled."""
+        if self._on_translate_change:
+            self._on_translate_change(self._translate_var.get())
 
     def _on_auto_start_toggled(self) -> None:
         """Called when auto-start is toggled."""
@@ -191,6 +208,10 @@ class SettingsFrame(ctk.CTkFrame):
     def set_chat_key(self, key: str) -> None:
         """Set the chat key."""
         self._chat_key_combo.set(key)
+
+    def set_translate(self, enabled: bool) -> None:
+        """Set the translate checkbox state."""
+        self._translate_var.set(enabled)
 
     def set_auto_start(self, enabled: bool) -> None:
         """Set the auto-start state."""

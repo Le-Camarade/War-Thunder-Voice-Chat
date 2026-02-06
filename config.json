@@ -2,9 +2,19 @@
   "joystick_name": "TWCS Throttle",
   "button_id": 9,
   "model": "medium",
+  "translate_to_english": false,
   "injection_delay_ms": 100,
   "chat_key": "enter",
-  "window_geometry": "400x820+1075+144",
+  "window_geometry": "400x929+343+25",
   "audio_device": null,
-  "auto_start": false
+  "auto_start": false,
+  "tts_engine_type": "online",
+  "tts_enabled": true,
+  "tts_own_username": "Le_Camarade",
+  "tts_poll_interval_ms": 500,
+  "tts_voice_id": "",
+  "tts_rate": 150,
+  "tts_channel_team": true,
+  "tts_channel_all": true,
+  "tts_channel_squadron": false
 }

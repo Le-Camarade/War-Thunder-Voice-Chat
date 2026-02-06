@@ -9,40 +9,33 @@ Cette branche ajoute la fonctionnalité **Text-to-Speech** : lecture vocale des 
 
 ## Découverte technique
 
-War Thunder expose un serveur HTTP local sur `http://localhost:8111/` qui affiche une interface web avec :
+War Thunder expose un serveur HTTP local sur `http://localhost:8111/` avec :
 - Carte tactique
 - Télémétrie avion
-- **Chat en temps réel** ← c'est ça qui nous intéresse
+- **API JSON `/gamechat`** ← c'est ça qui nous intéresse
 
-### Structure HTML du chat
+### API JSON /gamechat
 
-```html
-<div id="game-chat-root" class="ui-draggable ui-resizable">
-  <div class="caption">...</div>
-  <div id="textlines">
-    <div class="chat-line">
-      <span class="chat-time">85:56</span>
-      "[Équipe] moon_marble@psn: Suivez moi !"
-      <color=#ff96966e>[D3, alt. 1800 m]</color>
-    </div>
-    <div class="chat-line">
-      <span class="chat-time">86:21</span>
-      "[Équipe] Le_Camarade: Besoin de protection!"
-    </div>
-    <!-- ... -->
-  </div>
-</div>
+L'endpoint `GET /gamechat?lastId=N` retourne les messages depuis l'ID N :
+
+```json
+[
+  { "id": 3, "msg": "Suivez-moi !<color=#FF96966E> [F4, alt. 2100 m]</color>", "sender": "PVC_Atorpine", "enemy": false, "mode": "Équipe", "time": 1645 },
+  { "id": 4, "msg": "Need backup!", "sender": "Le_Camarade", "enemy": false, "mode": "Équipe", "time": 1978 }
+]
 ```
 
 ### Données extraites par message
 
-| Champ | Source | Exemple |
-|-------|--------|---------|
-| Timestamp | `.chat-time` | `85:56` |
-| Canal | Texte entre `[]` | `Équipe`, `Tous`, `Escadron` |
-| Pseudo | Après `]` avant `:` | `moon_marble@psn` |
-| Message | Après `:` | `Suivez moi !` |
-| Metadata | Tags `<color>` | `[D3, alt. 1800 m]` (position carte) |
+| Champ | Source JSON | Exemple |
+|-------|-----------|---------|
+| ID | `id` | `3` (auto-incrémenté, sert de curseur) |
+| Canal | `mode` | `Équipe`, `Tous`, `Escadron` |
+| Pseudo | `sender` | `PVC_Atorpine` |
+| Message | `msg` (nettoyé des tags `<color>`) | `Suivez-moi !` |
+| Ennemi | `enemy` | `false` |
+| Metadata | Tags `<color>` dans `msg` | `[F4, alt. 2100 m]` (position carte) |
+| Temps | `time` | `1645` (secondes de jeu) |
 
 ## Architecture du module TTS
 
@@ -52,160 +45,18 @@ War Thunder expose un serveur HTTP local sur `http://localhost:8111/` qui affich
 war-thunder-voice-chat/
 ├── core/
 │   ├── ... (existants)
-│   ├── chat_listener.py    # Scraping localhost:8111
+│   ├── chat_listener.py    # API JSON /gamechat
 │   └── tts_engine.py       # Synthèse vocale
 ├── ui/
 │   ├── ... (existants)
 │   └── tts_settings.py     # Panel config TTS
 ```
 
-### chat_listener.py
+### chat_listener.py (IMPLÉMENTÉ)
 
-```python
-"""
-Polling du chat War Thunder via localhost:8111
-"""
-import requests
-from bs4 import BeautifulSoup
-from dataclasses import dataclass
-from typing import List, Callable, Optional
-import threading
-import time
-import re
-
-@dataclass
-class ChatMessage:
-    timestamp: str          # "85:56"
-    channel: str            # "Équipe", "Tous", "Escadron"
-    sender: str             # "moon_marble@psn"
-    content: str            # "Suivez moi !"
-    metadata: Optional[str] # "[D3, alt. 1800 m]" ou None
-    
-    @property
-    def unique_id(self) -> str:
-        """Pour détecter les doublons"""
-        return f"{self.timestamp}:{self.sender}:{self.content[:20]}"
-
-class ChatListener:
-    def __init__(self, 
-                 url: str = "http://localhost:8111/",
-                 poll_interval: float = 0.5,
-                 own_username: str = None):
-        self.url = url
-        self.poll_interval = poll_interval
-        self.own_username = own_username
-        self._seen_ids: set = set()
-        self._running = False
-        self._thread: Optional[threading.Thread] = None
-        self._on_new_message: Optional[Callable[[ChatMessage], None]] = None
-    
-    def set_own_username(self, username: str):
-        """Pour filtrer ses propres messages"""
-        self.own_username = username
-    
-    def on_new_message(self, callback: Callable[[ChatMessage], None]):
-        """Register callback pour nouveaux messages"""
-        self._on_new_message = callback
-    
-    def _parse_chat_line(self, element) -> Optional[ChatMessage]:
-        """Parse un élément .chat-line en ChatMessage"""
-        try:
-            time_el = element.select_one('.chat-time')
-            if not time_el:
-                return None
-            
-            timestamp = time_el.text.strip()
-            full_text = element.get_text()
-            
-            # Retirer le timestamp du texte
-            text = full_text.replace(timestamp, '', 1).strip()
-            
-            # Pattern: [Canal] Pseudo: Message
-            match = re.match(r'\[([^\]]+)\]\s*([^:]+):\s*(.+)', text)
-            if not match:
-                return None
-            
-            channel = match.group(1)
-            sender = match.group(2).strip()
-            content = match.group(3).strip()
-            
-            # Extraire metadata (coordonnées) si présent
-            metadata = None
-            color_match = re.search(r'\[([A-H]\d+[^\]]*)\]', content)
-            if color_match:
-                metadata = color_match.group(0)
-                content = content.replace(metadata, '').strip()
-            
-            return ChatMessage(
-                timestamp=timestamp,
-                channel=channel,
-                sender=sender,
-                content=content,
-                metadata=metadata
-            )
-        except Exception:
-            return None
-    
-    def _fetch_messages(self) -> List[ChatMessage]:
-        """Récupère tous les messages actuels"""
-        try:
-            response = requests.get(self.url, timeout=1)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            messages = []
-            for line in soup.select('#textlines .chat-line'):
-                msg = self._parse_chat_line(line)
-                if msg:
-                    messages.append(msg)
-            return messages
-        except requests.RequestException:
-            return []
-    
-    def _poll_loop(self):
-        """Boucle de polling dans un thread séparé"""
-        while self._running:
-            messages = self._fetch_messages()
-            
-            for msg in messages:
-                # Ignorer les messages déjà vus
-                if msg.unique_id in self._seen_ids:
-                    continue
-                
-                # Ignorer ses propres messages
-                if self.own_username and self.own_username.lower() in msg.sender.lower():
-                    self._seen_ids.add(msg.unique_id)
-                    continue
-                
-                self._seen_ids.add(msg.unique_id)
-                
-                if self._on_new_message:
-                    self._on_new_message(msg)
-            
-            time.sleep(self.poll_interval)
-    
-    def start(self):
-        """Démarre le polling"""
-        if self._running:
-            return
-        self._running = True
-        self._thread = threading.Thread(target=self._poll_loop, daemon=True)
-        self._thread.start()
-    
-    def stop(self):
-        """Arrête le polling"""
-        self._running = False
-        if self._thread:
-            self._thread.join(timeout=2)
-    
-    def is_game_running(self) -> bool:
-        """Vérifie si War Thunder est lancé (localhost:8111 répond)"""
-        try:
-            requests.get(self.url, timeout=0.5)
-            return True
-        except requests.RequestException:
-            return False
-```
+Utilise l'API JSON `/gamechat?lastId=N` au lieu du scraping HTML.
+Déduplication native par `lastId` incrémental (pas besoin de set).
+Voir `core/chat_listener.py` pour le code complet.
 
 ### tts_engine.py
 
@@ -423,35 +274,36 @@ class EdgeTTSEngine(TTSEngine):
 
 ```
 # Ajouter à requirements.txt
-beautifulsoup4>=4.12.0
-pyttsx3>=2.90
-edge-tts>=6.1.0
-pydub>=0.25.1
+requests>=2.31.0      # Phase 1 (déjà ajouté)
+pyttsx3>=2.90         # Phase 2
+edge-tts>=6.1.0       # Phase 4 (optionnel)
+pydub>=0.25.1         # Phase 4 (optionnel)
 ```
 
 Note: `pydub` nécessite ffmpeg pour la lecture audio avec edge-tts.
 
 ## Priorités d'implémentation
 
-### Phase 1 - Chat Listener
-1. [ ] Implémenter `chat_listener.py`
-2. [ ] Test CLI : afficher les nouveaux messages en console
-3. [ ] Vérifier le parsing sur différents formats de message
+### Phase 1 - Chat Listener ✅
+1. [x] Implémenter `chat_listener.py` (API JSON `/gamechat`)
+2. [x] Test CLI : `test_chat_listener.py`
+3. [x] Parsing vérifié en live (70 messages, metadata, filtrage)
 
-### Phase 2 - TTS Engine
-4. [ ] Implémenter `Pyttsx3Engine` (plus simple)
-5. [ ] Test CLI : lire un message hardcodé
-6. [ ] Intégrer ChatListener + TTS : lire les messages en temps réel
+### Phase 2 - TTS Engine ✅
+4. [x] Implémenter `TTSEngine` dans `core/tts_engine.py` (pyttsx3, queue limitée, thread dédié)
+5. [x] Test CLI : `test_tts.py --text "..."` + `--list-voices` + `--voice N`
+6. [x] Intégration ChatListener + TTS : `test_tts.py --live` (74 messages lus en live)
 
-### Phase 3 - UI Integration
-7. [ ] Créer `tts_settings.py` avec les contrôles
-8. [ ] Intégrer dans la fenêtre principale (section dépliable)
-9. [ ] Sauvegarder/charger les settings TTS
+### Phase 3 - UI Integration ✅
+7. [x] Créer `ui/tts_settings.py` (toggle, voix, vitesse, canaux, username, statut WT)
+8. [x] Intégrer dans `app.py` (ChatListener + TTSEngine + callbacks + cleanup)
+9. [x] Sauvegarder/charger les settings TTS (8 champs dans config.py)
 
-### Phase 4 - Polish
-10. [ ] Implémenter `EdgeTTSEngine` (optionnel, meilleure qualité)
-11. [ ] Indicateur de statut connexion WT
-12. [ ] Gestion des erreurs (jeu fermé, connexion perdue)
+### Phase 4 - Polish ✅
+10. [x] Implémenter `EdgeTTSEngine` (edge-tts + pygame.mixer, 9 voix neurales)
+11. [x] Indicateur de statut connexion WT (check toutes les 5s)
+12. [x] Sélecteur moteur Offline/Online dans l'UI + config
+13. [x] Gestion des erreurs (queue limitée, truncation, cleanup temp files)
 
 ## Edge Cases à gérer
 
@@ -461,22 +313,8 @@ Note: `pydub` nécessite ffmpeg pour la lecture audio avec edge-tts.
 | Partie terminée (menu) | localhost:8111 peut ne plus répondre, gérer gracieusement |
 | Message très long | Tronquer à ~200 caractères pour le TTS |
 | Spam chat | Queue avec limite, drop les messages si > 5 en attente |
-| Caractères spéciaux | Nettoyer les tags `<color>` et autres markup |
-| Messages système | Filtrer "Eau en surchauffe", "Moteur détruit" (pas du chat joueur) |
-
-## Messages système à filtrer
-
-Ces messages apparaissent dans le log mais ne sont pas du chat joueur :
-
-```
-- "Eau en surchauffe"
-- "Huile en surchauffe"  
-- "Moteur détruit"
-- "X (Avion) abattu Y (Avion)"
-- "X (Avion) Sévèrement endommagé Y (Avion)"
-```
-
-**Règle de filtrage** : Ne lire que les messages qui matchent le pattern `[Canal] Pseudo: Message`
+| Caractères spéciaux | Tags `<color>` nettoyés par regex dans `_parse_message()` |
+| Messages système | L'API `/gamechat` ne retourne QUE les messages chat joueur |
 
 ## Commandes Git
 

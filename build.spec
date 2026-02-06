@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
 PyInstaller spec file for War Thunder Voice Chat.
-Build command: pyinstaller build.spec
+Build command: pyinstaller build.spec --noconfirm
 """
 
 import sys
@@ -11,6 +11,9 @@ block_cipher = None
 
 # Collect whisper model data
 whisper_datas = collect_data_files('whisper')
+
+# Collect customtkinter theme data
+ctk_datas = collect_data_files('customtkinter')
 
 # App resources (logo, icon)
 app_datas = [
@@ -32,15 +35,23 @@ hidden_imports = [
     'pyperclip',
     'ctypes',
     'winreg',
+    'requests',
+    'pyttsx3',
+    'pyttsx3.drivers',
+    'pyttsx3.drivers.sapi5',
+    'edge_tts',
+    'aiohttp',
 ]
 hidden_imports += collect_submodules('whisper')
 hidden_imports += collect_submodules('customtkinter')
+hidden_imports += collect_submodules('pyttsx3')
+hidden_imports += collect_submodules('edge_tts')
 
 a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=whisper_datas + app_datas,
+    datas=whisper_datas + ctk_datas + app_datas,
     hiddenimports=hidden_imports,
     hookspath=[],
     hooksconfig={},

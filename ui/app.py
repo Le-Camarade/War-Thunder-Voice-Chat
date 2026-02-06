@@ -12,10 +12,13 @@ from typing import Optional
 
 from .widgets import StatusLED, MessageDisplay, VolumeIndicator
 from .settings_frame import SettingsFrame
+from .tts_settings import TTSSettingsFrame
 from core.joystick import JoystickManager
 from core.recorder import AudioRecorder
 from core.transcriber import WhisperTranscriber
 from core.injector import ChatInjector
+from core.chat_listener import ChatListener, ChatMessage
+from core.tts_engine import TTSEngine, EdgeTTSEngine
 from core.autostart import set_auto_start
 from config import ConfigManager
 
@@ -69,8 +72,9 @@ class App(ctk.CTk):
 
         # Window configuration
         self.title("War Thunder Voice Chat")
-        self.geometry("400x700")
-        self.resizable(False, False)
+        self.geometry("400x750")
+        self.resizable(False, True)
+        self.minsize(400, 400)
 
         # Window icon
         icon_path = get_resource_path("icon.ico")
@@ -98,6 +102,10 @@ class App(ctk.CTk):
             chat_key=self._config_manager.config.chat_key
         )
 
+        # TTS components (engine created in _setup_tts based on config)
+        self._tts_engine = None
+        self._chat_listener = ChatListener()
+
         # State
         self._is_recording = False
         self._current_state = "idle"
@@ -117,15 +125,22 @@ class App(ctk.CTk):
         # Start joystick polling
         self._joystick_manager.start()
 
+        # Initialize TTS
+        self._setup_tts()
+
         # Bind close event
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _create_widgets(self) -> None:
         """Create interface widgets."""
 
+        # === Scrollable container ===
+        self._scroll_frame = ctk.CTkScrollableFrame(self, fg_color="transparent")
+        self._scroll_frame.pack(fill="both", expand=True, padx=5, pady=5)
+
         # === Status zone ===
-        status_frame = ctk.CTkFrame(self)
-        status_frame.pack(fill="x", padx=20, pady=20)
+        status_frame = ctk.CTkFrame(self._scroll_frame)
+        status_frame.pack(fill="x", padx=15, pady=(15, 10))
 
         self._status_led = StatusLED(status_frame, size=50)
         self._status_led.pack(pady=15)
@@ -136,27 +151,40 @@ class App(ctk.CTk):
 
         # === Settings ===
         self._settings_frame = SettingsFrame(
-            self,
+            self._scroll_frame,
             on_joystick_change=self._on_joystick_change,
             on_button_change=self._on_button_change,
             on_model_change=self._on_model_change,
             on_chat_key_change=self._on_chat_key_change,
-            on_auto_start_change=self._on_auto_start_change
+            on_auto_start_change=self._on_auto_start_change,
+            on_translate_change=self._on_translate_change
         )
-        self._settings_frame.pack(fill="x", padx=20, pady=(0, 10))
+        self._settings_frame.pack(fill="x", padx=15, pady=(0, 10))
         self._settings_frame.set_refresh_callback(self._refresh_joysticks)
 
+        # === TTS Settings ===
+        self._tts_settings = TTSSettingsFrame(
+            self._scroll_frame,
+            on_enabled_change=self._on_tts_enabled_change,
+            on_engine_change=self._on_tts_engine_change,
+            on_voice_change=self._on_tts_voice_change,
+            on_rate_change=self._on_tts_rate_change,
+            on_channel_change=self._on_tts_channel_change,
+            on_username_change=self._on_tts_username_change
+        )
+        self._tts_settings.pack(fill="x", padx=15, pady=(0, 10))
+
         # === Last message ===
-        self._message_display = MessageDisplay(self)
-        self._message_display.pack(fill="x", padx=20, pady=(0, 10))
+        self._message_display = MessageDisplay(self._scroll_frame)
+        self._message_display.pack(fill="x", padx=15, pady=(0, 10))
 
         # === Minimize button ===
         self._minimize_btn = ctk.CTkButton(
-            self,
+            self._scroll_frame,
             text="Minimize to Tray",
             command=self._minimize_to_tray
         )
-        self._minimize_btn.pack(pady=(10, 20))
+        self._minimize_btn.pack(pady=(10, 15))
 
     def _refresh_joysticks(self) -> None:
         """Refresh joystick list."""
@@ -195,6 +223,9 @@ class App(ctk.CTk):
         # Chat key
         self._settings_frame.set_chat_key(config.chat_key)
         self._injector.set_chat_key(config.chat_key)
+
+        # Translate
+        self._settings_frame.set_translate(config.translate_to_english)
 
         # Auto-start
         self._settings_frame.set_auto_start(config.auto_start)
@@ -237,6 +268,11 @@ class App(ctk.CTk):
         """Called when chat key changes."""
         self._injector.set_chat_key(key)
         self._config_manager.config.chat_key = key
+        self._config_manager.save()
+
+    def _on_translate_change(self, enabled: bool) -> None:
+        """Called when translate toggle changes."""
+        self._config_manager.config.translate_to_english = enabled
         self._config_manager.save()
 
     def _on_auto_start_change(self, enabled: bool) -> None:
@@ -336,7 +372,8 @@ class App(ctk.CTk):
                 )
 
             # Transcription
-            text = self._transcriber.transcribe(audio)
+            translate = self._config_manager.config.translate_to_english
+            text = self._transcriber.transcribe(audio, translate=translate)
 
             if not text:
                 self.after(0, lambda: self._set_state("idle"))
@@ -366,6 +403,159 @@ class App(ctk.CTk):
         """Change application state."""
         self._current_state = state
         self._status_led.set_state(state)
+
+    # === TTS ===
+
+    def _setup_tts(self) -> None:
+        """Initialize TTS engine and load TTS config."""
+        config = self._config_manager.config
+
+        # Create and start engine based on saved type
+        self._create_tts_engine(config.tts_engine_type)
+
+        # Set engine selector in UI
+        self._tts_settings.set_engine_type(config.tts_engine_type)
+
+        # Load saved TTS settings
+        if config.tts_voice_id:
+            self._tts_engine.set_voice(config.tts_voice_id)
+            self._tts_settings.set_voice(config.tts_voice_id)
+
+        self._tts_engine.set_rate(config.tts_rate)
+        self._tts_settings.set_rate(config.tts_rate)
+
+        self._tts_settings.set_channels(
+            config.tts_channel_team,
+            config.tts_channel_all,
+            config.tts_channel_squadron
+        )
+
+        self._tts_settings.set_username(config.tts_own_username)
+
+        # Configure chat listener
+        self._chat_listener.set_on_new_message(self._on_chat_message)
+        if config.tts_own_username:
+            self._chat_listener.set_own_username(config.tts_own_username)
+        if config.tts_poll_interval_ms:
+            self._chat_listener.set_poll_interval(config.tts_poll_interval_ms)
+
+        # Enable TTS if it was enabled
+        self._tts_settings.set_enabled(config.tts_enabled)
+        if config.tts_enabled:
+            self._start_tts()
+
+        # Start WT connection check
+        self._check_wt_connection()
+
+    def _create_tts_engine(self, engine_type: str) -> None:
+        """Create and start a TTS engine of the given type."""
+        # Stop existing engine if running
+        if self._tts_engine:
+            self._tts_engine.stop()
+
+        # Create new engine
+        if engine_type == "online":
+            self._tts_engine = EdgeTTSEngine()
+        else:
+            self._tts_engine = TTSEngine()
+
+        # Start and load voices
+        self._tts_engine.start()
+        voices = self._tts_engine.get_available_voices()
+        self._tts_settings.update_voices(voices)
+
+    def _start_tts(self) -> None:
+        """Start the chat listener."""
+        self._chat_listener.start()
+
+    def _stop_tts(self) -> None:
+        """Stop the chat listener and clear TTS queue."""
+        self._chat_listener.stop()
+        self._tts_engine.clear_queue()
+
+    def _on_chat_message(self, msg: ChatMessage) -> None:
+        """Called when a new chat message arrives (from listener thread)."""
+        config = self._config_manager.config
+
+        # Filter by channel
+        channel_lower = msg.channel.lower()
+        if any(k in channel_lower for k in ("équipe", "team")):
+            if not config.tts_channel_team:
+                return
+        elif any(k in channel_lower for k in ("tous", "all")):
+            if not config.tts_channel_all:
+                return
+        elif any(k in channel_lower for k in ("escadron", "squadron")):
+            if not config.tts_channel_squadron:
+                return
+
+        # Format and speak
+        tts_text = f"{msg.sender} says: {msg.content}"
+        self._tts_engine.speak(tts_text)
+
+        # Update last heard display on main thread
+        display_text = f"{msg.sender}: {msg.content}"
+        self.after(0, lambda: self._message_display.set_message(display_text))
+
+    def _check_wt_connection(self) -> None:
+        """Periodically check if War Thunder is running."""
+        connected = self._chat_listener.is_game_running()
+        self._tts_settings.set_connection_status(connected)
+        # Check again in 5 seconds
+        self.after(5000, self._check_wt_connection)
+
+    def _on_tts_enabled_change(self, enabled: bool) -> None:
+        """Called when TTS is toggled."""
+        self._config_manager.config.tts_enabled = enabled
+        self._config_manager.save()
+        if enabled:
+            self._start_tts()
+        else:
+            self._stop_tts()
+
+    def _on_tts_engine_change(self, engine_type: str) -> None:
+        """Called when TTS engine type changes (offline/online)."""
+        config = self._config_manager.config
+
+        # Recreate engine with new type
+        self._create_tts_engine(engine_type)
+
+        # Re-apply rate setting
+        self._tts_engine.set_rate(config.tts_rate)
+
+        # Save config (voice_id reset since voices differ between engines)
+        config.tts_engine_type = engine_type
+        config.tts_voice_id = ""
+        self._config_manager.save()
+
+    def _on_tts_voice_change(self, voice_id: str) -> None:
+        """Called when TTS voice changes."""
+        self._tts_engine.set_voice(voice_id)
+        self._config_manager.config.tts_voice_id = voice_id
+        self._config_manager.save()
+
+    def _on_tts_rate_change(self, rate: int) -> None:
+        """Called when TTS speed changes."""
+        self._tts_engine.set_rate(rate)
+        self._config_manager.config.tts_rate = rate
+        self._config_manager.save()
+
+    def _on_tts_channel_change(self, channel: str, enabled: bool) -> None:
+        """Called when a channel filter changes."""
+        config = self._config_manager.config
+        if channel == "team":
+            config.tts_channel_team = enabled
+        elif channel == "all":
+            config.tts_channel_all = enabled
+        elif channel == "squadron":
+            config.tts_channel_squadron = enabled
+        self._config_manager.save()
+
+    def _on_tts_username_change(self, username: str) -> None:
+        """Called when username changes."""
+        self._chat_listener.set_own_username(username)
+        self._config_manager.config.tts_own_username = username
+        self._config_manager.save()
 
     def _minimize_to_tray(self) -> None:
         """Minimize application to system tray."""
@@ -449,5 +639,8 @@ class App(ctk.CTk):
         self._joystick_manager.cleanup()
         if self._transcriber:
             self._transcriber.unload_model()
+        self._chat_listener.stop()
+        if self._tts_engine:
+            self._tts_engine.stop()
 
         self.destroy()
