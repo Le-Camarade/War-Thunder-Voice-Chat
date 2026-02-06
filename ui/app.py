@@ -17,7 +17,7 @@ from core.joystick import JoystickManager
 from core.recorder import AudioRecorder
 from core.transcriber import WhisperTranscriber
 from core.injector import ChatInjector
-from core.chat_listener import ChatListener, ChatMessage
+from core.chat_listener import ChatListener, ChatMessage, RADIO_COMMANDS
 from core.tts_engine import TTSEngine, EdgeTTSEngine
 from core.autostart import set_auto_start
 from config import ConfigManager
@@ -476,6 +476,10 @@ class App(ctk.CTk):
     def _on_chat_message(self, msg: ChatMessage) -> None:
         """Called when a new chat message arrives (from listener thread)."""
         config = self._config_manager.config
+
+        # Filter radio commands (T-menu)
+        if msg.content in RADIO_COMMANDS:
+            return
 
         # Filter by channel
         channel_lower = msg.channel.lower()

@@ -12,8 +12,8 @@
   "tts_enabled": true,
   "tts_own_username": "Le_Camarade",
   "tts_poll_interval_ms": 500,
-  "tts_voice_id": "",
-  "tts_rate": 150,
+  "tts_voice_id": "fr-FR-HenriNeural",
+  "tts_rate": 100,
   "tts_channel_team": true,
   "tts_channel_all": true,
   "tts_channel_squadron": false

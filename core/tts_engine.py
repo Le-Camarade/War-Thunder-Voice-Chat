@@ -44,8 +44,6 @@ class TTSEngine:
         self._voice_id: Optional[str] = None
         self._rate: int = 150  # mots par minute (défaut pyttsx3)
 
-        # Référence au moteur (créé dans le thread worker)
-        self._engine = None
         self._engine_ready = threading.Event()
         self._voices: List[VoiceInfo] = []
 
@@ -77,25 +75,20 @@ class TTSEngine:
         """Thread worker qui gère le moteur pyttsx3."""
         import pyttsx3
 
+        # Charger les voix disponibles (engine temporaire)
         try:
-            self._engine = pyttsx3.init()
+            engine = pyttsx3.init()
+            raw_voices = engine.getProperty('voices')
+            self._voices = []
+            for v in raw_voices:
+                lang = v.languages[0] if v.languages else ""
+                self._voices.append(VoiceInfo(id=v.id, name=v.name, language=lang))
+            engine.stop()
+            del engine
         except Exception as e:
             logger.error(f"Erreur init pyttsx3: {e}")
             self._engine_ready.set()
             return
-
-        # Charger les voix disponibles
-        raw_voices = self._engine.getProperty('voices')
-        self._voices = []
-        for v in raw_voices:
-            lang = v.languages[0] if v.languages else ""
-            self._voices.append(VoiceInfo(id=v.id, name=v.name, language=lang))
-
-        # Appliquer la config initiale
-        if self._voice_id:
-            self._engine.setProperty('voice', self._voice_id)
-        if self._rate:
-            self._engine.setProperty('rate', self._rate)
 
         self._engine_ready.set()
 
@@ -109,8 +102,16 @@ class TTSEngine:
                 if len(text) > MAX_TEXT_LENGTH:
                     text = text[:MAX_TEXT_LENGTH] + "..."
 
-                self._engine.say(text)
-                self._engine.runAndWait()
+                # Re-init engine each time to avoid runAndWait() hang bug
+                engine = pyttsx3.init()
+                if self._voice_id:
+                    engine.setProperty('voice', self._voice_id)
+                if self._rate:
+                    engine.setProperty('rate', self._rate)
+                engine.say(text)
+                engine.runAndWait()
+                engine.stop()
+                del engine
 
             except queue.Empty:
                 continue
@@ -145,8 +146,6 @@ class TTSEngine:
     def set_voice(self, voice_id: str) -> None:
         """Change la voix."""
         self._voice_id = voice_id
-        if self._engine:
-            self._engine.setProperty('voice', voice_id)
 
     def set_rate(self, rate: int) -> None:
         """
@@ -156,8 +155,6 @@ class TTSEngine:
             rate: Mots par minute (défaut ~150, range 50-300)
         """
         self._rate = rate
-        if self._engine:
-            self._engine.setProperty('rate', rate)
 
     def get_available_voices(self) -> List[VoiceInfo]:
         """Retourne la liste des voix disponibles."""
@@ -245,7 +242,7 @@ class EdgeTTSEngine:
         asyncio.set_event_loop(loop)
         self._engine_ready.set()
 
-        tmp_file = os.path.join(self._tmp_dir, "tts_audio.mp3")
+        msg_counter = 0
 
         while self._running:
             try:
@@ -256,6 +253,10 @@ class EdgeTTSEngine:
                 # Tronquer
                 if len(text) > MAX_TEXT_LENGTH:
                     text = text[:MAX_TEXT_LENGTH] + "..."
+
+                # Unique temp file per message to avoid file lock issues
+                msg_counter += 1
+                tmp_file = os.path.join(self._tmp_dir, f"tts_{msg_counter}.mp3")
 
                 # Générer l'audio
                 async def generate():
@@ -270,6 +271,13 @@ class EdgeTTSEngine:
                     pygame.mixer.music.play()
                     while pygame.mixer.music.get_busy() and self._running:
                         asyncio.get_event_loop().run_until_complete(asyncio.sleep(0.1))
+                    pygame.mixer.music.unload()
+
+                # Cleanup old temp file
+                try:
+                    os.remove(tmp_file)
+                except OSError:
+                    pass
 
             except queue.Empty:
                 continue
