@@ -101,6 +101,7 @@ class App(ctk.CTk):
         # State
         self._is_recording = False
         self._current_state = "idle"
+        self._transcribe_thread: Optional[threading.Thread] = None
 
         # Create interface
         self._create_widgets()
@@ -266,7 +267,14 @@ class App(ctk.CTk):
         self._set_state("recording")
 
         # Start recording
-        self._recorder.start_recording()
+        try:
+            self._recorder.start_recording()
+        except Exception as e:
+            logger.error(f"Microphone error: {e}")
+            self._is_recording = False
+            self._set_state("error", "Microphone not available")
+            self.after(3000, lambda: self._set_state("idle"))
+            return
 
         # Start volume update
         self._update_volume()
@@ -295,12 +303,15 @@ class App(ctk.CTk):
 
         # Start transcription in thread
         self._set_state("transcribing")
-        thread = threading.Thread(
+        self._transcribe_thread = threading.Thread(
             target=self._transcribe_and_inject,
             args=(audio,),
             daemon=True
         )
-        thread.start()
+        self._transcribe_thread.start()
+
+        # Timeout: if transcription takes >60s, abort
+        self.after(60000, self._check_transcription_timeout)
 
     def _update_volume(self) -> None:
         """Update volume indicator during recording."""
@@ -335,8 +346,22 @@ class App(ctk.CTk):
                     device="cpu"
                 )
 
+            # Show loading state if model not yet loaded
+            if not self._transcriber.is_loaded:
+                self.after(0, lambda: self._set_state(
+                    "loading_model",
+                    f"Downloading/loading {self._config_manager.config.model} model..."
+                ))
+
             # Transcription
-            text = self._transcriber.transcribe(audio)
+            translate = self._config_manager.config.translate_to_english
+            text = self._transcriber.transcribe(audio, translate=translate)
+
+            # Check if we were cancelled by timeout
+            if self._current_state == "idle":
+                return
+
+            self.after(0, lambda: self._set_state("transcribing"))
 
             if not text:
                 self.after(0, lambda: self._set_state("idle"))
@@ -354,18 +379,43 @@ class App(ctk.CTk):
                 # Return to idle after 1.5s
                 self.after(1500, lambda: self._set_state("idle"))
             else:
-                self.after(0, lambda: self._set_state("error"))
+                self.after(0, lambda: self._set_state("error", "Injection failed"))
                 self.after(2000, lambda: self._set_state("idle"))
 
+        except ImportError as e:
+            logger.error(f"Missing dependency: {e}")
+            self.after(0, lambda: self._set_state("error", "Whisper not installed correctly"))
+            self.after(4000, lambda: self._set_state("idle"))
         except Exception as e:
-            print(f"Transcription/injection error: {e}")
-            self.after(0, lambda: self._set_state("error"))
-            self.after(2000, lambda: self._set_state("idle"))
+            error_msg = str(e)
+            logger.error(f"Transcription/injection error: {error_msg}")
+            # Provide user-friendly messages for common errors
+            if "connection" in error_msg.lower() or "url" in error_msg.lower():
+                detail = "Model download failed - check internet"
+            elif "memory" in error_msg.lower() or "oom" in error_msg.lower():
+                detail = "Not enough RAM - try 'tiny' model"
+            elif "no such file" in error_msg.lower() or "not found" in error_msg.lower():
+                detail = "Model file not found"
+            else:
+                detail = error_msg[:80]
+            self.after(0, lambda d=detail: self._set_state("error", d))
+            self.after(4000, lambda: self._set_state("idle"))
+        finally:
+            self._transcribe_thread = None
 
-    def _set_state(self, state: str) -> None:
+    def _check_transcription_timeout(self) -> None:
+        """Cancel transcription if it's been running too long."""
+        if self._transcribe_thread is not None and self._transcribe_thread.is_alive():
+            if self._current_state in ("transcribing", "loading_model"):
+                logger.warning("Transcription timeout (60s)")
+                self._transcribe_thread = None
+                self._set_state("error", "Timeout - model may still be downloading")
+                self.after(4000, lambda: self._set_state("idle"))
+
+    def _set_state(self, state: str, detail: str = "") -> None:
         """Change application state."""
         self._current_state = state
-        self._status_led.set_state(state)
+        self._status_led.set_state(state, detail)
 
     def _minimize_to_tray(self) -> None:
         """Minimize application to system tray."""
