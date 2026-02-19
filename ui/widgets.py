@@ -20,6 +20,7 @@ class StatusLED(ctk.CTkFrame):
         "idle": "#666666",
         "recording": "#ff4444",
         "transcribing": "#ffaa00",
+        "loading_model": "#ffaa00",
         "sending": "#4488ff",
         "sent": "#44ff44",
         "error": "#ff4444"
@@ -29,6 +30,7 @@ class StatusLED(ctk.CTkFrame):
         "idle": "Ready",
         "recording": "Recording...",
         "transcribing": "Transcribing...",
+        "loading_model": "Loading model...",
         "sending": "Sending...",
         "sent": "Sent!",
         "error": "Error"
@@ -58,6 +60,16 @@ class StatusLED(ctk.CTkFrame):
             font=ctk.CTkFont(size=14)
         )
         self._label.pack(pady=(5, 0))
+
+        # Detail label (for error messages etc.)
+        self._detail_label = ctk.CTkLabel(
+            self,
+            text="",
+            font=ctk.CTkFont(size=11),
+            text_color="#999999",
+            wraplength=250
+        )
+        self._detail_label.pack(pady=(2, 0))
 
         self._draw_led()
 
@@ -102,14 +114,15 @@ class StatusLED(ctk.CTkFrame):
         b = min(255, int(b + (255 - b) * factor))
         return f"#{r:02x}{g:02x}{b:02x}"
 
-    def set_state(self, state: str) -> None:
-        """Change the LED state."""
+    def set_state(self, state: str, detail: str = "") -> None:
+        """Change the LED state with optional detail text."""
         if self._blink_job:
             self.after_cancel(self._blink_job)
             self._blink_job = None
 
         self._state = state
         self._label.configure(text=self.LABELS.get(state, state))
+        self._detail_label.configure(text=detail)
         self._draw_led()
 
     def get_state(self) -> str:
