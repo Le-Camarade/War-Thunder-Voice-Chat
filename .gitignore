@@ -6,5 +6,5 @@ venv/
 *.pyc
 *.pyo
 *.spec.bak
-config.json
+*/config.json
 nul
