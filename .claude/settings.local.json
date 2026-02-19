@@ -6,7 +6,10 @@
       "Bash(del \"c:\\\\Users\\\\nicol\\\\Documents\\\\2026_WT_RADIO_MOD\\\\test_inject.py\")",
       "Bash(cmd /c del \"c:\\\\Users\\\\nicol\\\\Documents\\\\2026_WT_RADIO_MOD\\\\test_inject.py\")",
       "Bash(python:*)",
-      "Bash(pip install:*)"
+      "Bash(pip install:*)",
+      "Bash(venvScriptspip install deep-translator)",
+      "Bash(c:UsersnicolDocuments2026_WT_RADIO_MODvenvScriptspip.exe install deep-translator)",
+      "Bash(\"c:/Users/nicol/Documents/2026_WT_RADIO_MOD/venv/Scripts/pip.exe\" install deep-translator)"
     ]
   }
 }

@@ -46,6 +46,8 @@ class Config:
     tts_channel_team: bool = True
     tts_channel_all: bool = True
     tts_channel_squadron: bool = False
+    tts_translate: bool = False
+    tts_translate_lang: str = "en"  # Target language code (auto from voice)
 
 
 class ConfigManager:

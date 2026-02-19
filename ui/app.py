@@ -6,6 +6,7 @@ Integrates all components: joystick, audio, transcription, injection.
 
 import customtkinter as ctk
 import threading
+import logging
 import os
 import sys
 from typing import Optional
@@ -21,6 +22,8 @@ from core.chat_listener import ChatListener, ChatMessage, RADIO_COMMANDS
 from core.tts_engine import TTSEngine, EdgeTTSEngine
 from core.autostart import set_auto_start
 from config import ConfigManager
+
+logger = logging.getLogger(__name__)
 
 # System tray
 try:
@@ -170,7 +173,9 @@ class App(ctk.CTk):
             on_voice_change=self._on_tts_voice_change,
             on_rate_change=self._on_tts_rate_change,
             on_channel_change=self._on_tts_channel_change,
-            on_username_change=self._on_tts_username_change
+            on_username_change=self._on_tts_username_change,
+            on_translate_change=self._on_tts_translate_change,
+            on_translate_lang_change=self._on_tts_translate_lang_change
         )
         self._tts_settings.pack(fill="x", padx=15, pady=(0, 10))
 
@@ -431,6 +436,8 @@ class App(ctk.CTk):
         )
 
         self._tts_settings.set_username(config.tts_own_username)
+        self._tts_settings.set_translate(config.tts_translate)
+        self._tts_settings.set_translate_lang(config.tts_translate_lang)
 
         # Configure chat listener
         self._chat_listener.set_on_new_message(self._on_chat_message)
@@ -493,12 +500,24 @@ class App(ctk.CTk):
             if not config.tts_channel_squadron:
                 return
 
+        # Translate if enabled
+        content = msg.content
+        if config.tts_translate:
+            try:
+                from deep_translator import GoogleTranslator
+                content = GoogleTranslator(
+                    source='auto',
+                    target=config.tts_translate_lang
+                ).translate(content) or content
+            except Exception as e:
+                logger.debug(f"Translation failed: {e}")
+
         # Format and speak
-        tts_text = f"{msg.sender} says: {msg.content}"
+        tts_text = f"{msg.sender} says: {content}"
         self._tts_engine.speak(tts_text)
 
         # Update last heard display on main thread
-        display_text = f"{msg.sender}: {msg.content}"
+        display_text = f"{msg.sender}: {content}"
         self.after(0, lambda: self._message_display.set_message(display_text))
 
     def _check_wt_connection(self) -> None:
@@ -559,6 +578,16 @@ class App(ctk.CTk):
         """Called when username changes."""
         self._chat_listener.set_own_username(username)
         self._config_manager.config.tts_own_username = username
+        self._config_manager.save()
+
+    def _on_tts_translate_change(self, enabled: bool) -> None:
+        """Called when TTS translate toggle changes."""
+        self._config_manager.config.tts_translate = enabled
+        self._config_manager.save()
+
+    def _on_tts_translate_lang_change(self, lang_code: str) -> None:
+        """Called when TTS translate language changes."""
+        self._config_manager.config.tts_translate_lang = lang_code
         self._config_manager.save()
 
     def _minimize_to_tray(self) -> None:

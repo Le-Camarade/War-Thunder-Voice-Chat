@@ -27,6 +27,8 @@ class TTSSettingsFrame(ctk.CTkFrame):
         on_rate_change: Optional[Callable[[int], None]] = None,
         on_channel_change: Optional[Callable[[str, bool], None]] = None,
         on_username_change: Optional[Callable[[str], None]] = None,
+        on_translate_change: Optional[Callable[[bool], None]] = None,
+        on_translate_lang_change: Optional[Callable[[str], None]] = None,
         **kwargs
     ):
         super().__init__(master, **kwargs)
@@ -37,6 +39,8 @@ class TTSSettingsFrame(ctk.CTkFrame):
         self._on_rate_change = on_rate_change
         self._on_channel_change = on_channel_change
         self._on_username_change = on_username_change
+        self._on_translate_change = on_translate_change
+        self._on_translate_lang_change = on_translate_lang_change
 
         self._voices: List[VoiceInfo] = []
 
@@ -177,20 +181,48 @@ class TTSSettingsFrame(ctk.CTkFrame):
             command=lambda: self._on_channel_toggled("squadron", self._channel_squadron_var.get())
         ).pack(side="left")
 
+        # === Translate ===
+        translate_frame = ctk.CTkFrame(self, fg_color="transparent")
+        translate_frame.grid(row=9, column=0, sticky="ew", padx=10, pady=(5, 3))
+
+        self._translate_var = ctk.BooleanVar(value=False)
+        ctk.CTkCheckBox(
+            translate_frame,
+            text="Translate messages to:",
+            variable=self._translate_var,
+            command=self._on_translate_toggled
+        ).pack(side="left")
+
+        self._translate_lang_values = {
+            "English": "en", "French": "fr", "German": "de",
+            "Russian": "ru", "Spanish": "es", "Italian": "it",
+            "Portuguese": "pt", "Polish": "pl",
+            "Japanese": "ja", "Chinese": "zh-CN",
+        }
+        self._translate_lang_combo = ctk.CTkComboBox(
+            self,
+            values=list(self._translate_lang_values.keys()),
+            width=150,
+            command=self._on_translate_lang_selected,
+            state="readonly"
+        )
+        self._translate_lang_combo.set("English")
+        self._translate_lang_combo.grid(row=10, column=0, sticky="w", padx=10, pady=(0, 8))
+
         # === Username ===
         ctk.CTkLabel(
             self,
             text="Your username:",
             font=ctk.CTkFont(size=13),
             anchor="w"
-        ).grid(row=9, column=0, sticky="w", padx=10, pady=(5, 3))
+        ).grid(row=11, column=0, sticky="w", padx=10, pady=(5, 3))
 
         self._username_entry = ctk.CTkEntry(
             self,
             width=280,
             placeholder_text="e.g. Le_Camarade"
         )
-        self._username_entry.grid(row=10, column=0, sticky="w", padx=10, pady=(0, 8))
+        self._username_entry.grid(row=12, column=0, sticky="w", padx=10, pady=(0, 8))
         self._username_entry.bind("<FocusOut>", self._on_username_focus_out)
         self._username_entry.bind("<Return>", self._on_username_focus_out)
 
@@ -202,7 +234,7 @@ class TTSSettingsFrame(ctk.CTkFrame):
             text_color="#999999",
             anchor="w"
         )
-        self._status_label.grid(row=11, column=0, sticky="w", padx=10, pady=(5, 15))
+        self._status_label.grid(row=13, column=0, sticky="w", padx=10, pady=(5, 15))
 
         # Configure grid
         self.grid_columnconfigure(0, weight=1)
@@ -236,6 +268,16 @@ class TTSSettingsFrame(ctk.CTkFrame):
     def _on_channel_toggled(self, channel: str, enabled: bool) -> None:
         if self._on_channel_change:
             self._on_channel_change(channel, enabled)
+
+    def _on_translate_toggled(self) -> None:
+        enabled = self._translate_var.get()
+        if self._on_translate_change:
+            self._on_translate_change(enabled)
+
+    def _on_translate_lang_selected(self, choice: str) -> None:
+        lang_code = self._translate_lang_values.get(choice, "en")
+        if self._on_translate_lang_change:
+            self._on_translate_lang_change(lang_code)
 
     def _on_username_focus_out(self, event=None) -> None:
         username = self._username_entry.get().strip()
@@ -282,6 +324,16 @@ class TTSSettingsFrame(ctk.CTkFrame):
         self._username_entry.delete(0, "end")
         if username:
             self._username_entry.insert(0, username)
+
+    def set_translate(self, enabled: bool) -> None:
+        self._translate_var.set(enabled)
+
+    def set_translate_lang(self, lang_code: str) -> None:
+        """Select translate language by code."""
+        for name, code in self._translate_lang_values.items():
+            if code == lang_code:
+                self._translate_lang_combo.set(name)
+                return
 
     def set_connection_status(self, connected: bool) -> None:
         if connected:
